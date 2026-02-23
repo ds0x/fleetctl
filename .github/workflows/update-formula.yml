@@ -1,0 +1,102 @@
+name: Update fleetctl Formula
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get latest fleetctl version
+        id: latest
+        run: |
+          LATEST=$(curl -sSf "https://api.github.com/repos/fleetdm/fleet/releases/latest" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            | jq -r '.tag_name | ltrimstr("fleet-v")')
+          echo "version=${LATEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Get current formula version
+        id: current
+        run: |
+          CURRENT=$(grep -m1 '^  version ' Formula/fleetctl.rb | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=${CURRENT}" >> "$GITHUB_OUTPUT"
+
+      - name: Check if update is needed
+        id: check
+        run: |
+          if [ "${{ steps.latest.outputs.version }}" = "${{ steps.current.outputs.version }}" ]; then
+            echo "Formula is already up to date (${{ steps.current.outputs.version }})"
+            echo "update_needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New version available: ${{ steps.latest.outputs.version }} (current: ${{ steps.current.outputs.version }})"
+            echo "update_needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Calculate SHA256 hashes
+        id: hashes
+        if: steps.check.outputs.update_needed == 'true'
+        env:
+          VERSION: ${{ steps.latest.outputs.version }}
+        run: |
+          set -euo pipefail
+          BASE_URL="https://github.com/fleetdm/fleet/releases/download/fleet-v${VERSION}"
+
+          SHA_MACOS=$(curl -sSfL "${BASE_URL}/fleetctl_v${VERSION}_macos.tar.gz" | sha256sum | awk '{print $1}')
+          SHA_AMD64=$(curl -sSfL "${BASE_URL}/fleetctl_v${VERSION}_linux_amd64.tar.gz" | sha256sum | awk '{print $1}')
+          SHA_ARM64=$(curl -sSfL "${BASE_URL}/fleetctl_v${VERSION}_linux_arm64.tar.gz" | sha256sum | awk '{print $1}')
+
+          echo "sha_macos=${SHA_MACOS}" >> "$GITHUB_OUTPUT"
+          echo "sha_amd64=${SHA_AMD64}" >> "$GITHUB_OUTPUT"
+          echo "sha_arm64=${SHA_ARM64}" >> "$GITHUB_OUTPUT"
+
+      - name: Update formula
+        if: steps.check.outputs.update_needed == 'true'
+        env:
+          NEW_VERSION: ${{ steps.latest.outputs.version }}
+          OLD_VERSION: ${{ steps.current.outputs.version }}
+          SHA_MACOS: ${{ steps.hashes.outputs.sha_macos }}
+          SHA_AMD64: ${{ steps.hashes.outputs.sha_amd64 }}
+          SHA_ARM64: ${{ steps.hashes.outputs.sha_arm64 }}
+        run: |
+          sed -i "s/version \"${OLD_VERSION}\"/version \"${NEW_VERSION}\"/" Formula/fleetctl.rb
+
+          python3 - <<'EOF'
+          import re, os
+
+          sha_macos = os.environ["SHA_MACOS"]
+          sha_amd64 = os.environ["SHA_AMD64"]
+          sha_arm64 = os.environ["SHA_ARM64"]
+
+          # Replace sha256 values in order: macOS, linux amd64, linux arm64
+          sha_replacements = [sha_macos, sha_amd64, sha_arm64]
+          replacement_idx = 0
+          new_lines = []
+          with open("Formula/fleetctl.rb") as f:
+              for line in f.readlines():
+                  if re.match(r'\s+sha256 "[0-9a-fA-F]{64}"', line) and replacement_idx < len(sha_replacements):
+                      line = re.sub(r'"[0-9a-fA-F]{64}"', f'"{sha_replacements[replacement_idx]}"', line)
+                      replacement_idx += 1
+                  new_lines.append(line)
+
+          with open("Formula/fleetctl.rb", "w") as f:
+              f.write("".join(new_lines))
+          EOF
+
+      - name: Commit and push changes
+        if: steps.check.outputs.update_needed == 'true'
+        env:
+          NEW_VERSION: ${{ steps.latest.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/fleetctl.rb
+          git commit -m "Update fleetctl to v${NEW_VERSION}"
+          git push
