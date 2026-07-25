@@ -1,23 +1,23 @@
 class Fleetctl < Formula
   desc "CLI tool for Fleet device management (https://fleetdm.com)"
   homepage "https://fleetdm.com"
-  version "4.89.1"
+  version "4.89.2"
   license "MIT"
 
   on_macos do
     url "https://github.com/fleetdm/fleet/releases/download/fleet-v#{version}/fleetctl_v#{version}_macos.tar.gz"
-    sha256 "a13f88800e59792af3480feb1ac0e6fe4f63775e87f237b5a47264a5e05f85e6"
+    sha256 "38222bb2a5cb010e3de1337e6cd500a4d8773f68da1f74696850ed4ec1b18270"
   end
 
   on_linux do
     on_intel do
       url "https://github.com/fleetdm/fleet/releases/download/fleet-v#{version}/fleetctl_v#{version}_linux_amd64.tar.gz"
-      sha256 "5fdccf39237db3c96fa69468539e22c2cd69cfff5a4b147fdbcb5ca22ea1f2be"
+      sha256 "a60f0bdef6940a97500f589221c037400ae2827ffecadd86a6de9185a6366306"
     end
 
     on_arm do
       url "https://github.com/fleetdm/fleet/releases/download/fleet-v#{version}/fleetctl_v#{version}_linux_arm64.tar.gz"
-      sha256 "ff6e4225004fb2db43d5f1f178ea780d82db0925258015a67379d52056aed092"
+      sha256 "d7e463a015beb0c22818b96284bcef017737fa3b1a2a5b983af22c37638d1e10"
     end
   end
 
